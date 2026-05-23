@@ -1,0 +1,10 @@
+node_modules/
+backend/node_modules/
+frontend/node_modules/
+backend/*.db
+backend/*.db-shm
+backend/*.db-wal
+backend/.env
+*.log
+.DS_Store
+frontend/build/
