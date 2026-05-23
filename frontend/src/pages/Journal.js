@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import api from '../api';
 import { useAuth } from '../AuthContext';
-import { Plus, Search, Pencil, Trash2, X, ArrowDownCircle, ArrowUpCircle } from 'lucide-react';
+import { Pencil, Trash2, X, ArrowDownCircle, ArrowUpCircle } from 'lucide-react';
 import toast from 'react-hot-toast';
 
 function formatXOF(n) {
