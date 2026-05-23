@@ -29,10 +29,38 @@ db.exec(`
     created_at TEXT DEFAULT (datetime('now')),
     FOREIGN KEY (saisi_par) REFERENCES users(id)
   );
+
+  CREATE TABLE IF NOT EXISTS categories (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    nom TEXT NOT NULL,
+    type TEXT NOT NULL CHECK(type IN ('entree', 'sortie')),
+    actif INTEGER NOT NULL DEFAULT 1,
+    created_at TEXT DEFAULT (datetime('now'))
+  );
+
+  CREATE TABLE IF NOT EXISTS membres (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    nom TEXT NOT NULL,
+    prenom TEXT,
+    telephone TEXT,
+    email TEXT,
+    actif INTEGER NOT NULL DEFAULT 1,
+    created_at TEXT DEFAULT (datetime('now'))
+  );
+
+  CREATE TABLE IF NOT EXISTS comptes (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    nom TEXT NOT NULL,
+    numero TEXT,
+    solde_initial REAL DEFAULT 0,
+    actif INTEGER NOT NULL DEFAULT 1,
+    created_at TEXT DEFAULT (datetime('now'))
+  );
 `);
 
-// Ajouter colonne notes si elle n'existe pas (migration douce)
+// Migrations douces
 try { db.exec('ALTER TABLE operations ADD COLUMN notes TEXT'); } catch {}
+try { db.exec('ALTER TABLE operations ADD COLUMN concerne TEXT'); } catch {}
 
 // Utilisateurs par défaut
 const adminExist = db.prepare('SELECT id FROM users WHERE email = ?').get('admin@dialawtv.sn');
