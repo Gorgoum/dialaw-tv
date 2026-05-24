@@ -1,41 +1,42 @@
 const express = require('express');
-const db = require('../database');
+const { pool } = require('../database');
 const { authMiddleware, adminOnly } = require('../middleware');
 
 const router = express.Router();
-
 router.use(authMiddleware);
 
-router.get('/', (req, res) => {
-  const comptes = db.prepare('SELECT * FROM comptes ORDER BY numero').all();
-  res.json(comptes);
+router.get('/', async (req, res) => {
+  const { rows } = await pool.query('SELECT * FROM comptes ORDER BY nom');
+  res.json(rows);
 });
 
-router.post('/', adminOnly, (req, res) => {
-  const { numero, libelle, type } = req.body;
-  if (!numero || !libelle || !type) return res.status(400).json({ error: 'Tous les champs requis' });
+router.post('/', adminOnly, async (req, res) => {
+  const { nom, numero, solde_initial } = req.body;
+  if (!nom) return res.status(400).json({ error: 'Le nom est obligatoire' });
 
-  const exist = db.prepare('SELECT id FROM comptes WHERE numero = ?').get(numero);
-  if (exist) return res.status(400).json({ error: 'Ce numéro de compte existe déjà' });
-
-  const result = db.prepare('INSERT INTO comptes (numero, libelle, type) VALUES (?, ?, ?)').run(numero, libelle, type);
-  res.status(201).json(db.prepare('SELECT * FROM comptes WHERE id = ?').get(result.lastInsertRowid));
+  const { rows } = await pool.query(
+    'INSERT INTO comptes (nom, numero, solde_initial) VALUES ($1, $2, $3) RETURNING *',
+    [nom, numero || null, solde_initial || 0]
+  );
+  res.status(201).json(rows[0]);
 });
 
-router.put('/:id', adminOnly, (req, res) => {
-  const { numero, libelle, type } = req.body;
-  const compte = db.prepare('SELECT * FROM comptes WHERE id = ?').get(req.params.id);
-  if (!compte) return res.status(404).json({ error: 'Compte introuvable' });
+router.put('/:id', adminOnly, async (req, res) => {
+  const { nom, numero, solde_initial, actif } = req.body;
+  const exist = await pool.query('SELECT * FROM comptes WHERE id = $1', [req.params.id]);
+  if (exist.rows.length === 0) return res.status(404).json({ error: 'Compte introuvable' });
 
-  db.prepare('UPDATE comptes SET numero=?, libelle=?, type=? WHERE id=?').run(numero, libelle, type, req.params.id);
-  res.json(db.prepare('SELECT * FROM comptes WHERE id = ?').get(req.params.id));
+  const { rows } = await pool.query(
+    'UPDATE comptes SET nom=$1, numero=$2, solde_initial=$3, actif=$4 WHERE id=$5 RETURNING *',
+    [nom, numero || null, solde_initial || 0, actif, req.params.id]
+  );
+  res.json(rows[0]);
 });
 
-router.delete('/:id', adminOnly, (req, res) => {
-  const used = db.prepare('SELECT id FROM ecritures WHERE compte_debit_id=? OR compte_credit_id=?').get(req.params.id, req.params.id);
-  if (used) return res.status(400).json({ error: 'Ce compte est utilisé dans des écritures, impossible de supprimer' });
-
-  db.prepare('DELETE FROM comptes WHERE id = ?').run(req.params.id);
+router.delete('/:id', adminOnly, async (req, res) => {
+  const exist = await pool.query('SELECT * FROM comptes WHERE id = $1', [req.params.id]);
+  if (exist.rows.length === 0) return res.status(404).json({ error: 'Compte introuvable' });
+  await pool.query('DELETE FROM comptes WHERE id = $1', [req.params.id]);
   res.json({ message: 'Compte supprimé' });
 });
 

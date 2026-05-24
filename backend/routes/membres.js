@@ -1,48 +1,48 @@
 const express = require('express');
-const db = require('../database');
+const { pool } = require('../database');
 const { authMiddleware, adminOnly } = require('../middleware');
 
 const router = express.Router();
 router.use(authMiddleware);
 
-// Tous les membres actifs (accessible à tous pour le formulaire d'entrée)
-router.get('/', (req, res) => {
+router.get('/', async (req, res) => {
   const tous = req.query.tous === '1';
-  const membres = db.prepare(
-    tous
-      ? 'SELECT * FROM membres_equipe ORDER BY nom'
-      : 'SELECT * FROM membres_equipe WHERE actif = 1 ORDER BY nom'
-  ).all();
-  res.json(membres);
+  const { rows } = await pool.query(
+    tous ? 'SELECT * FROM membres ORDER BY nom' : 'SELECT * FROM membres WHERE actif = 1 ORDER BY nom'
+  );
+  res.json(rows);
 });
 
-// Ajouter (admin uniquement)
-router.post('/', adminOnly, (req, res) => {
-  const { nom, poste } = req.body;
+router.post('/', adminOnly, async (req, res) => {
+  const { nom, prenom, telephone, email } = req.body;
   if (!nom || !nom.trim()) return res.status(400).json({ error: 'Le nom est obligatoire' });
 
-  const exist = db.prepare('SELECT id FROM membres_equipe WHERE nom = ?').get(nom.trim());
-  if (exist) return res.status(400).json({ error: 'Ce membre existe déjà' });
+  const exist = await pool.query('SELECT id FROM membres WHERE nom = $1', [nom.trim()]);
+  if (exist.rows.length > 0) return res.status(400).json({ error: 'Ce membre existe déjà' });
 
-  const result = db.prepare('INSERT INTO membres_equipe (nom, poste) VALUES (?, ?)').run(nom.trim(), poste || null);
-  res.status(201).json(db.prepare('SELECT * FROM membres_equipe WHERE id = ?').get(result.lastInsertRowid));
+  const { rows } = await pool.query(
+    'INSERT INTO membres (nom, prenom, telephone, email) VALUES ($1, $2, $3, $4) RETURNING *',
+    [nom.trim(), prenom || null, telephone || null, email || null]
+  );
+  res.status(201).json(rows[0]);
 });
 
-// Modifier (admin uniquement)
-router.put('/:id', adminOnly, (req, res) => {
-  const { nom, poste, actif } = req.body;
-  const m = db.prepare('SELECT * FROM membres_equipe WHERE id = ?').get(req.params.id);
-  if (!m) return res.status(404).json({ error: 'Membre introuvable' });
+router.put('/:id', adminOnly, async (req, res) => {
+  const { nom, prenom, telephone, email, actif } = req.body;
+  const exist = await pool.query('SELECT * FROM membres WHERE id = $1', [req.params.id]);
+  if (exist.rows.length === 0) return res.status(404).json({ error: 'Membre introuvable' });
 
-  db.prepare('UPDATE membres_equipe SET nom=?, poste=?, actif=? WHERE id=?').run(nom.trim(), poste || null, actif, req.params.id);
-  res.json(db.prepare('SELECT * FROM membres_equipe WHERE id = ?').get(req.params.id));
+  const { rows } = await pool.query(
+    'UPDATE membres SET nom=$1, prenom=$2, telephone=$3, email=$4, actif=$5 WHERE id=$6 RETURNING *',
+    [nom.trim(), prenom || null, telephone || null, email || null, actif, req.params.id]
+  );
+  res.json(rows[0]);
 });
 
-// Supprimer (admin uniquement)
-router.delete('/:id', adminOnly, (req, res) => {
-  const m = db.prepare('SELECT * FROM membres_equipe WHERE id = ?').get(req.params.id);
-  if (!m) return res.status(404).json({ error: 'Membre introuvable' });
-  db.prepare('DELETE FROM membres_equipe WHERE id = ?').run(req.params.id);
+router.delete('/:id', adminOnly, async (req, res) => {
+  const exist = await pool.query('SELECT * FROM membres WHERE id = $1', [req.params.id]);
+  if (exist.rows.length === 0) return res.status(404).json({ error: 'Membre introuvable' });
+  await pool.query('DELETE FROM membres WHERE id = $1', [req.params.id]);
   res.json({ message: 'Membre supprimé' });
 });
 

@@ -1,48 +1,55 @@
 const express = require('express');
 const bcrypt = require('bcryptjs');
-const db = require('../database');
+const { pool } = require('../database');
 const { authMiddleware, adminOnly } = require('../middleware');
 
 const router = express.Router();
-
 router.use(authMiddleware, adminOnly);
 
-router.get('/', (req, res) => {
-  const users = db.prepare('SELECT id, nom, email, role, actif, created_at FROM users ORDER BY created_at DESC').all();
-  res.json(users);
+router.get('/', async (req, res) => {
+  const { rows } = await pool.query('SELECT id, nom, email, role, actif, created_at FROM users ORDER BY created_at DESC');
+  res.json(rows);
 });
 
-router.post('/', (req, res) => {
+router.post('/', async (req, res) => {
   const { nom, email, password, role } = req.body;
   if (!nom || !email || !password || !role) return res.status(400).json({ error: 'Tous les champs requis' });
 
-  const exist = db.prepare('SELECT id FROM users WHERE email = ?').get(email);
-  if (exist) return res.status(400).json({ error: 'Email déjà utilisé' });
+  const exist = await pool.query('SELECT id FROM users WHERE email = $1', [email]);
+  if (exist.rows.length > 0) return res.status(400).json({ error: 'Email déjà utilisé' });
 
   const hash = bcrypt.hashSync(password, 10);
-  const result = db.prepare('INSERT INTO users (nom, email, password, role) VALUES (?, ?, ?, ?)').run(nom, email, hash, role);
-  const user = db.prepare('SELECT id, nom, email, role, actif, created_at FROM users WHERE id = ?').get(result.lastInsertRowid);
-  res.status(201).json(user);
+  const { rows } = await pool.query(
+    'INSERT INTO users (nom, email, password, role) VALUES ($1, $2, $3, $4) RETURNING id, nom, email, role, actif, created_at',
+    [nom, email, hash, role]
+  );
+  res.status(201).json(rows[0]);
 });
 
-router.put('/:id', (req, res) => {
+router.put('/:id', async (req, res) => {
   const { nom, email, role, actif, password } = req.body;
-  const user = db.prepare('SELECT * FROM users WHERE id = ?').get(req.params.id);
-  if (!user) return res.status(404).json({ error: 'Utilisateur introuvable' });
+  const exist = await pool.query('SELECT * FROM users WHERE id = $1', [req.params.id]);
+  if (exist.rows.length === 0) return res.status(404).json({ error: 'Utilisateur introuvable' });
 
+  let result;
   if (password) {
     const hash = bcrypt.hashSync(password, 10);
-    db.prepare('UPDATE users SET nom=?, email=?, role=?, actif=?, password=? WHERE id=?').run(nom, email, role, actif, hash, req.params.id);
+    result = await pool.query(
+      'UPDATE users SET nom=$1, email=$2, role=$3, actif=$4, password=$5 WHERE id=$6 RETURNING id, nom, email, role, actif, created_at',
+      [nom, email, role, actif, hash, req.params.id]
+    );
   } else {
-    db.prepare('UPDATE users SET nom=?, email=?, role=?, actif=? WHERE id=?').run(nom, email, role, actif, req.params.id);
+    result = await pool.query(
+      'UPDATE users SET nom=$1, email=$2, role=$3, actif=$4 WHERE id=$5 RETURNING id, nom, email, role, actif, created_at',
+      [nom, email, role, actif, req.params.id]
+    );
   }
-
-  res.json(db.prepare('SELECT id, nom, email, role, actif, created_at FROM users WHERE id = ?').get(req.params.id));
+  res.json(result.rows[0]);
 });
 
-router.delete('/:id', (req, res) => {
+router.delete('/:id', async (req, res) => {
   if (req.params.id == req.user.id) return res.status(400).json({ error: 'Vous ne pouvez pas supprimer votre propre compte' });
-  db.prepare('UPDATE users SET actif = 0 WHERE id = ?').run(req.params.id);
+  await pool.query('UPDATE users SET actif = 0 WHERE id = $1', [req.params.id]);
   res.json({ message: 'Utilisateur désactivé' });
 });
 

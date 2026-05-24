@@ -1,16 +1,17 @@
 const express = require('express');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
-const db = require('../database');
+const { pool } = require('../database');
 const { authMiddleware, SECRET } = require('../middleware');
 
 const router = express.Router();
 
-router.post('/login', (req, res) => {
+router.post('/login', async (req, res) => {
   const { email, password } = req.body;
   if (!email || !password) return res.status(400).json({ error: 'Email et mot de passe requis' });
 
-  const user = db.prepare('SELECT * FROM users WHERE email = ? AND actif = 1').get(email);
+  const { rows } = await pool.query('SELECT * FROM users WHERE email = $1 AND actif = 1', [email]);
+  const user = rows[0];
   if (!user) return res.status(401).json({ error: 'Identifiants incorrects' });
 
   const valid = bcrypt.compareSync(password, user.password);
